@@ -1,0 +1,20 @@
+# Root ignores shared by backend/ and frontend/.
+# Each subproject also has its own .gitignore for stack-specific rules.
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
