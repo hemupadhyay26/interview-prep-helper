@@ -106,17 +106,11 @@ function ResumeDetails({ resume }: { resume: Resume }) {
   )
 }
 
-export default function ResumePanel({
-  sessionId,
-}: {
-  sessionId: string | null
-}) {
-  const { data: resume } = useResume(sessionId)
-  const { upload, remove } = useResumeMutations(sessionId)
+export default function ResumePanel() {
+  const { data: resume } = useResume()
+  const { upload, remove } = useResumeMutations()
   const [open, setOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
-
-  if (!sessionId) return null
 
   const pickFile = () => fileRef.current?.click()
 
@@ -127,7 +121,7 @@ export default function ResumePanel({
   }
 
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="flex flex-col gap-1">
       <input
         ref={fileRef}
         type="file"
@@ -137,7 +131,7 @@ export default function ResumePanel({
       />
 
       {upload.isPending ? (
-        <span className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground">
           <Loader2Icon className="size-3.5 animate-spin" />
           Parsing resume…
         </span>
@@ -145,7 +139,7 @@ export default function ResumePanel({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="flex max-w-[220px] items-center gap-1.5 rounded-md border bg-card px-2.5 py-1 text-xs text-foreground transition-colors hover:bg-accent"
+          className="flex w-full items-center gap-1.5 rounded-md border bg-card px-2.5 py-1.5 text-xs text-foreground transition-colors hover:bg-accent"
           title={`${resume.filename} — view parsed resume`}
         >
           <FileTextIcon className="size-3.5 shrink-0 text-muted-foreground" />
@@ -155,6 +149,7 @@ export default function ResumePanel({
         <RippleButton
           variant="outline"
           size="sm"
+          className="w-full"
           onClick={pickFile}
           aria-label="Upload resume"
         >

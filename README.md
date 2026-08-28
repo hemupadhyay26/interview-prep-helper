@@ -18,11 +18,11 @@ The repo is a two-part monorepo:
 - **Job posting ingestion** — paste a URL in chat; the agent scrapes the
   page ([crawl4ai](https://github.com/unclecode/crawl4ai)) and extracts a
   structured `JobDetails` record (`job_agent`).
-- **Resume grounding** — upload a PDF/DOCX (≤5 MB). It is parsed with
+- **Resume grounding** — upload a PDF/DOCX (≤5 MB) once. It is parsed with
   [Docling](https://docling-project.github.io/docling/), split by section,
   structured by `resume_agent`, and embedded into a local Chroma store.
-  The interview agent then asks about your actual projects and roles via a
-  `search_resume` tool.
+  The resume is global — every chat references it, and the interview agent
+  asks about your actual projects and roles via a `search_resume` tool.
 - **Question generation** — `question_generator` produces role-specific
   technical / behavioral / situational questions.
 - **Auto chat titles** — `title_agent` names a conversation once it has
@@ -104,10 +104,10 @@ Other scripts: `npm run build`, `npm run typecheck`, `npm run lint`,
   agent; replies stream back token by token.
 - Drop a job posting URL into the chat and the agent fetches and
   structures the role for you.
-- Upload a resume to a session and questions become grounded in your
-  actual experience.
-- One resume and one job posting per session — re-adding either replaces
-  the previous one.
+- Upload your resume once (it's global, shared by every chat) and
+  questions become grounded in your actual experience.
+- One job posting per session and one resume overall — re-adding either
+  replaces the previous one.
 
 Interactive API docs are available at `http://localhost:8000/docs` while
 the backend is running.

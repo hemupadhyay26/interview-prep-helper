@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.agents import resume_agent
 from app.db.database import SessionLocal
-from app.db.models import ChatSession, Resume
+from app.db.models import Resume
 from app.schemas.resume import ResumeOut
 from app.services.resume_parser import parse_to_markdown, split_into_sections
 from app.services.vector_store import (
@@ -17,16 +17,17 @@ from app.services.vector_store import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/sessions", tags=["resume"])
+# The resume is global (one per app), not tied to a chat session. Upload
+# it once here; every session's interview agent references it.
+router = APIRouter(prefix="/resume", tags=["resume"])
 
 MAX_RESUME_SIZE = 5 * 1024 * 1024  # 5MB
 
 
-def _to_resume_out(session_id: str, filename: str, profile_json: str) -> ResumeOut:
+def _to_resume_out(filename: str, profile_json: str) -> ResumeOut:
     profile = json.loads(profile_json)
 
     return ResumeOut(
-        session_id=session_id,
         filename=filename,
         summary=profile["summary"],
         skills=profile["skills"],
@@ -36,26 +37,17 @@ def _to_resume_out(session_id: str, filename: str, profile_json: str) -> ResumeO
     )
 
 
+async def _load_resume(db) -> Resume | None:
+    result = await db.execute(select(Resume).limit(1))
+    return result.scalar_one_or_none()
+
+
 # -------------------------------------------------------------------
 # Upload / replace resume
 # -------------------------------------------------------------------
 
-@router.post("/{session_id}/resume")
-async def upload_resume(
-    session_id: str,
-    file: UploadFile = File(...),
-):
-    async with SessionLocal() as db:
-        result = await db.execute(
-            select(ChatSession).where(ChatSession.id == session_id)
-        )
-
-        if result.scalar_one_or_none() is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Chat session not found",
-            )
-
+@router.post("")
+async def upload_resume(file: UploadFile = File(...)):
     content = await file.read()
 
     if len(content) > MAX_RESUME_SIZE:
@@ -87,10 +79,7 @@ async def upload_resume(
     try:
         profile_result = await resume_agent.run(markdown)
     except Exception as exc:
-        logger.exception(
-            "Resume structuring failed | session=%s",
-            session_id,
-        )
+        logger.exception("Resume structuring failed")
         raise HTTPException(
             status_code=422,
             detail="Failed to parse resume content",
@@ -99,18 +88,14 @@ async def upload_resume(
     profile = profile_result.output
 
     # -----------------------------------------------------------
-    # Persist (replaces any existing resume for this session)
+    # Persist (replaces any existing resume)
     # -----------------------------------------------------------
 
     async with SessionLocal() as db:
-        result = await db.execute(
-            select(Resume).where(Resume.session_id == session_id)
-        )
-
-        resume = result.scalar_one_or_none()
+        resume = await _load_resume(db)
 
         if resume is None:
-            resume = Resume(session_id=session_id)
+            resume = Resume()
             db.add(resume)
 
         resume.filename = filename
@@ -122,8 +107,7 @@ async def upload_resume(
         profile_json = resume.profile
 
         logger.info(
-            "Resume uploaded | session=%s | filename=%s | projects=%d",
-            session_id,
+            "Resume uploaded | filename=%s | projects=%d",
             filename,
             len(profile.projects),
         )
@@ -133,60 +117,49 @@ async def upload_resume(
     # -----------------------------------------------------------
 
     chunks = build_chunks(sections, profile)
-    await upsert_resume_chunks(session_id, chunks)
+    await upsert_resume_chunks(chunks)
 
-    return _to_resume_out(session_id, filename, profile_json)
+    return _to_resume_out(filename, profile_json)
 
 
 # -------------------------------------------------------------------
 # Get resume
 # -------------------------------------------------------------------
 
-@router.get("/{session_id}/resume")
-async def get_resume(session_id: str):
+@router.get("")
+async def get_resume():
     async with SessionLocal() as db:
-        result = await db.execute(
-            select(Resume).where(Resume.session_id == session_id)
-        )
-
-        resume = result.scalar_one_or_none()
+        resume = await _load_resume(db)
 
         if resume is None:
             raise HTTPException(
                 status_code=404,
-                detail="No resume uploaded for this session",
+                detail="No resume uploaded",
             )
 
-        return _to_resume_out(session_id, resume.filename, resume.profile)
+        return _to_resume_out(resume.filename, resume.profile)
 
 
 # -------------------------------------------------------------------
 # Delete resume
 # -------------------------------------------------------------------
 
-@router.delete("/{session_id}/resume")
-async def delete_resume(session_id: str):
+@router.delete("")
+async def delete_resume():
     async with SessionLocal() as db:
-        result = await db.execute(
-            select(Resume).where(Resume.session_id == session_id)
-        )
-
-        resume = result.scalar_one_or_none()
+        resume = await _load_resume(db)
 
         if resume is None:
             raise HTTPException(
                 status_code=404,
-                detail="No resume uploaded for this session",
+                detail="No resume uploaded",
             )
 
         await db.delete(resume)
         await db.commit()
 
-    await delete_resume_chunks(session_id)
+    await delete_resume_chunks()
 
-    logger.info(
-        "Resume deleted | session=%s",
-        session_id,
-    )
+    logger.info("Resume deleted")
 
-    return {"success": True, "session_id": session_id}
+    return {"success": True}

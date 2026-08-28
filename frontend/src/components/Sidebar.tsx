@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react'
+import { PanelLeftIcon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { RippleButton } from '@/components/animate-ui/components/buttons/ripple'
 import { IconButton } from '@/components/animate-ui/components/buttons/icon'
 import { Button } from '@/components/animate-ui/components/buttons/button'
@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/animate-ui/components/base/dialog'
 import { cn } from '@/lib/utils'
+import ResumePanel from './ResumePanel'
 import type { SessionSummary } from '@/types'
 
 interface SidebarProps {
@@ -128,12 +129,65 @@ export default function Sidebar({
   onDelete,
 }: SidebarProps) {
   const [pendingDelete, setPendingDelete] = useState<SessionSummary | null>(null)
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('sidebar:collapsed') === '1'
+    } catch {
+      return false
+    }
+  })
+
+  const toggleCollapsed = () =>
+    setCollapsed((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem('sidebar:collapsed', next ? '1' : '0')
+      } catch {
+        // ignore — collapse still works for this session
+      }
+      return next
+    })
+
+  if (collapsed) {
+    return (
+      <aside className="border-fade-y flex w-14 shrink-0 flex-col items-center gap-1 bg-sidebar py-3 text-sidebar-foreground">
+        <IconButton
+          size="sm"
+          variant="ghost"
+          aria-label="Expand sidebar"
+          onClick={toggleCollapsed}
+        >
+          <PanelLeftIcon />
+        </IconButton>
+        <IconButton
+          size="sm"
+          variant="ghost"
+          aria-label="New chat"
+          onClick={onNew}
+        >
+          <PlusIcon />
+        </IconButton>
+        <div className="flex-1" />
+        <ThemeTogglerButton variant="ghost" size="sm" />
+      </aside>
+    )
+  }
 
   return (
     <aside className="border-fade-y flex w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground">
       <div className="flex items-center justify-between px-4 py-3">
         <span className="font-semibold tracking-tight">Prep Helper</span>
-        <ThemeTogglerButton variant="ghost" size="sm" />
+        <div className="flex items-center gap-0.5">
+          <ThemeTogglerButton variant="ghost" size="sm" />
+          <IconButton
+            size="sm"
+            variant="ghost"
+            aria-label="Collapse sidebar"
+            onClick={toggleCollapsed}
+          >
+            <PanelLeftIcon />
+          </IconButton>
+        </div>
       </div>
 
       <div className="px-3 pb-2">
@@ -168,6 +222,13 @@ export default function Sidebar({
           />
         ))}
       </nav>
+
+      <div className="border-t border-sidebar-border px-3 py-3">
+        <p className="mb-1.5 px-0.5 text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/60">
+          Resume
+        </p>
+        <ResumePanel />
+      </div>
 
       <Dialog
         open={pendingDelete !== null}

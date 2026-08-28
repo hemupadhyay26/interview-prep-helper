@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 interview_agent = Agent(
     model,
     name=settings.app_name,
-    deps_type=str,  # session_id, used to scope resume lookups
+    deps_type=str,  # session_id, used to scope the job posting to a session
     system_prompt=f"""
 You are {settings.app_name}, an AI interview-preparation assistant.
 
@@ -64,20 +64,13 @@ asks for generic questions.
 async def resume_context(ctx: RunContext[str]) -> str:
     """
     Prime the agent with a high-level view of the candidate's resume
-    (if one has been uploaded for this session), so it steers questions
-    toward what the candidate actually mentioned rather than asking
-    generically.
+    (if one has been uploaded - the resume is global, shared across every
+    session), so it steers questions toward what the candidate actually
+    mentioned rather than asking generically.
     """
 
-    session_id = ctx.deps
-
-    if not session_id:
-        return ""
-
     async with SessionLocal() as db:
-        result = await db.execute(
-            select(Resume).where(Resume.session_id == session_id)
-        )
+        result = await db.execute(select(Resume).limit(1))
 
         resume = result.scalar_one_or_none()
 
@@ -256,14 +249,9 @@ async def search_resume(ctx: RunContext[str], query: str) -> str:
     resume.
     """
 
-    session_id = ctx.deps
-
-    if not session_id:
-        return "No resume on file for this session."
-
-    chunks = await search_resume_chunks(session_id, query)
+    chunks = await search_resume_chunks(query)
 
     if not chunks:
-        return "No resume on file for this session."
+        return "No resume on file."
 
     return "\n\n---\n\n".join(chunks)

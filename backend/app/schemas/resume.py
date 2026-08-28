@@ -8,7 +8,6 @@ class ResumeProjectOut(BaseModel):
 
 
 class ResumeOut(BaseModel):
-    session_id: str
     filename: str
     summary: str
     skills: list[str]

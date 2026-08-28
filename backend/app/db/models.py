@@ -47,13 +47,8 @@ class Resume(Base):
         default=lambda: str(uuid4()),
     )
 
-    # One resume per session - re-uploading replaces the existing row.
-    session_id: Mapped[str] = mapped_column(
-        String(36),
-        ForeignKey("chat_sessions.id", ondelete="CASCADE"),
-        unique=True,
-    )
-
+    # The resume is global, not per-session: one row for the whole app,
+    # re-uploading replaces it. Every chat session references it.
     filename: Mapped[str] = mapped_column(String(255))
 
     # Docling's markdown export of the parsed file, kept for reference

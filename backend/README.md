@@ -50,17 +50,20 @@ show up as a drop + add).
 
 ## Resume upload
 
-`POST /sessions/{session_id}/resume` (multipart, field `file`, PDF or DOCX,
-≤5MB) parses the resume with [Docling](https://docling-project.github.io/docling/),
-splits it into sections by detected heading (experience/skills/projects/
+The resume is **global** — one per app, not tied to a chat session.
+Upload it once; every session's `interview_agent` references it.
+
+`POST /resume` (multipart, field `file`, PDF or DOCX, ≤5MB) parses the
+resume with [Docling](https://docling-project.github.io/docling/), splits
+it into sections by detected heading (experience/skills/projects/
 education), runs it through `resume_agent` for structured extraction, and
 embeds section + per-project chunks into a local Chroma store at
 `data/chroma/` (via `EMBEDDING_MODEL_NAME` in `.env`, default
-`text-embedding-3-small`). `interview_agent` then uses this per-session,
-via a `search_resume` tool plus a resume summary injected into every turn.
-`GET`/`DELETE` on the same path fetch/remove it. One resume per session —
-re-uploading replaces the previous one.
+`text-embedding-3-small`). `interview_agent` then uses it via a
+`search_resume` tool plus a resume summary injected into every turn.
+`GET`/`DELETE /resume` fetch/remove it. Re-uploading replaces the
+previous one.
 
 Note: `docling` is a heavy dependency (pulls in `torch` + layout/table ML
-models) — the first real parse in a session may be slower while those
+models) — the first real parse after startup may be slower while those
 models load, but a 1-2 page resume converts quickly after that.

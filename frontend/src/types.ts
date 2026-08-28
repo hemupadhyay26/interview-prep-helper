@@ -38,11 +38,10 @@ export interface ResumeProject {
 }
 
 /**
- * Structured resume attached to a session.
- * `GET/POST /sessions/{id}/resume` response (`ResumeOut`).
+ * The candidate's structured resume. Global (one per app), shared across
+ * every session. `GET/POST /resume` response (`ResumeOut`).
  */
 export interface Resume {
-  session_id: string
   filename: string
   summary: string
   skills: string[]

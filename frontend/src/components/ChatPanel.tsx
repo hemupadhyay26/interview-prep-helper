@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react'
 import { CopyButton } from '@/components/animate-ui/components/buttons/copy'
 import Composer from './Composer'
 import Markdown from './Markdown'
-import ResumePanel from './ResumePanel'
 import type { ChatMessage } from '@/types'
 
 interface ChatPanelProps {
@@ -54,7 +53,6 @@ export default function ChatPanel({
           <span className="truncate text-sm font-medium text-muted-foreground">
             {sessionTitle || 'Untitled'}
           </span>
-          <ResumePanel sessionId={sessionId} />
         </header>
       )}
 
