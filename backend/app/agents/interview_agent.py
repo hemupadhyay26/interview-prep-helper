@@ -4,13 +4,13 @@ import logging
 from pydantic_ai import Agent, RunContext
 from sqlalchemy import select
 
-from app.agents.job_agent import job_agent
+from app.agents.job_agent import JobIngestError, ingest_job_posting
 from app.agents.models import model
 from app.agents.question_generator import question_agent
 from app.core.config import settings
 from app.db.database import SessionLocal
 from app.db.models import JobPosting, Resume
-from app.services.job_scraper import JobScrapeError, scrape_job_posting
+from app.schemas.resume import ResumeProfile
 from app.services.vector_store import search_resume_chunks
 
 logger = logging.getLogger(__name__)
@@ -50,12 +50,43 @@ description text and continue from that.
 
 Do not generate structured JSON yourself.
 
-When the user is ready for interview questions,
-use the question generation tool.
-
 Do not generate questions before enough information
 about the role is available unless the user explicitly
 asks for generic questions.
+
+## Running the interview (default behaviour)
+
+Practise like a real interviewer: ONE question at a time.
+
+- When the user is ready to practise, call `generate_interview_questions`
+  to get a set, but keep that set to yourself. Do NOT paste the whole
+  list into the chat.
+- Ask a single question, then stop and wait for the user's answer.
+- After they answer, give short, specific feedback (what was strong, what
+  was missing or wrong, one concrete tip), then ask the next question.
+- Track where you are (e.g. "Question 3 of 8"). If you run out, offer to
+  generate more or wrap up with an overall summary.
+- If the user asks to skip, move on, go back, or change topic, follow
+  that.
+- Only dump the full numbered list if the user explicitly asks to just
+  see all the questions (e.g. "list them", "give me all of them",
+  "I don't want a mock interview") - then use the list format below.
+
+## Formatting your replies
+
+Reply in GitHub-flavored Markdown.
+
+- One question at a time: put the topic in bold, then the question, on
+  its own - not as a list item, e.g.
+  `**AWS architecture** - Design a highly available ...`.
+- Only when the user explicitly asked for the whole set: output it as a
+  single Markdown ordered list (`1.`, `2.`, `3.` ...), one question per
+  item, a blank line between items, topic in bold at the start of each.
+  Never hand-write the numbers - let the list markers do it.
+- Use `**bold**` for short emphasis, `` `code` `` for commands, config
+  keys, and identifiers, and fenced code blocks for multi-line snippets.
+- Keep normal explanation in short paragraphs; only use a list when the
+  content is genuinely a list.
 """,
 )
 
@@ -77,22 +108,67 @@ async def resume_context(ctx: RunContext[str]) -> str:
     if resume is None:
         return ""
 
-    profile = json.loads(resume.profile)
+    profile = ResumeProfile.from_stored(json.loads(resume.profile))
 
-    skills = ", ".join(profile["skills"]) or "none listed"
+    def _dash(value: str) -> str:
+        return value.strip() or "—"
+
+    name = profile.name.strip() or "not stated on the resume"
+    headline = _dash(profile.headline)
+    location = _dash(profile.contact.location)
+    summary = profile.summary.strip() or "none provided"
+    skills = ", ".join(profile.skills) or "none listed"
+    links = ", ".join(profile.contact.links) or "none listed"
+    certifications = ", ".join(profile.certifications) or "none listed"
+
+    if profile.experience:
+        experience_lines = "\n".join(
+            f"- {_dash(role.title)} at {_dash(role.company)}"
+            f" ({_dash(role.start_date)} - {_dash(role.end_date)})"
+            for role in profile.experience
+        )
+    else:
+        experience_lines = "- none listed"
+
+    if profile.education:
+        education_lines = "\n".join(
+            f"- {_dash(edu.degree)}, {_dash(edu.institution)}"
+            f" ({_dash(edu.end_date)})"
+            for edu in profile.education
+        )
+    else:
+        education_lines = "- none listed"
+
     project_names = (
-        ", ".join(project["name"] for project in profile["projects"])
+        ", ".join(project.name for project in profile.projects if project.name)
         or "none listed"
     )
 
     return f"""
-The candidate has uploaded a resume.
+The candidate has uploaded a resume. High-level snapshot:
 
+Name: {name}
+Headline: {headline}
+Location: {location}
+Summary: {summary}
+Links: {links}
 Skills: {skills}
+Certifications: {certifications}
+
+Experience:
+{experience_lines}
+
+Education:
+{education_lines}
+
 Projects mentioned: {project_names}
 
-Call the `search_resume` tool with a specific project name, role, or
-topic to get its full detail before asking a deep question about it.
+Address the candidate by name when it is known. The links above (GitHub,
+LinkedIn, portfolio, etc.) are already on file - use them directly and
+never ask the candidate to paste a link or detail that is listed here.
+Call the `search_resume` tool with a specific project name, company,
+role, or topic to pull its full detail (bullet points, metrics, tech)
+before asking a deep question about it.
 """
 
 
@@ -164,53 +240,12 @@ async def fetch_job_posting(ctx: RunContext[str], url: str) -> str:
         return "No active session; ask the user to paste the job description."
 
     try:
-        markdown = await scrape_job_posting(url)
-    except JobScrapeError as exc:
+        details = await ingest_job_posting(session_id, url)
+    except JobIngestError as exc:
         return (
-            f"Couldn't read that page ({exc}). Ask the user to paste the "
+            f"Couldn't use that page ({exc}). Ask the user to paste the "
             "job description text and continue from that."
         )
-
-    try:
-        details = (await job_agent.run(markdown)).output
-    except Exception:
-        logger.exception("Job posting structuring failed | url=%s", url)
-        return (
-            "Couldn't make sense of that page. Ask the user to paste the "
-            "job description text and continue from that."
-        )
-
-    if not details.title and not details.responsibilities and (
-        not details.required_skills
-    ):
-        return (
-            "That page didn't look like a job posting. Ask the user to "
-            "paste the job description text and continue from that."
-        )
-
-    async with SessionLocal() as db:
-        result = await db.execute(
-            select(JobPosting).where(JobPosting.session_id == session_id)
-        )
-
-        job = result.scalar_one_or_none()
-
-        if job is None:
-            job = JobPosting(session_id=session_id)
-            db.add(job)
-
-        job.source_url = url
-        job.raw_text = markdown
-        job.details = details.model_dump_json()
-
-        await db.commit()
-
-    logger.info(
-        "Job posting fetched | session=%s | url=%s | title=%s",
-        session_id,
-        url,
-        details.title,
-    )
 
     return (
         "Fetched the job posting. Extracted details:\n"
@@ -224,8 +259,12 @@ async def generate_interview_questions(
     number_of_questions: int = 5,
 ) -> str:
     """
-    Generate interview questions using the specialized
+    Generate a bank of interview questions using the specialized
     question-generation agent.
+
+    The returned JSON is for you to work through one question at a time in
+    a mock interview - do not paste the whole list to the user unless they
+    explicitly asked to just see all the questions.
     """
 
     result = await question_agent.run(

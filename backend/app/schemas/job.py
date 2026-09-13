@@ -1,4 +1,10 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
+
+
+class JobIn(BaseModel):
+    """Request body for `POST /sessions/{session_id}/job`."""
+
+    url: HttpUrl
 
 
 class JobOut(BaseModel):

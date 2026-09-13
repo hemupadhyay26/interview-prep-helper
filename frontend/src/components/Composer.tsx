@@ -1,13 +1,16 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { SendHorizontalIcon } from 'lucide-react'
 import { RippleButton } from '@/components/animate-ui/components/buttons/ripple'
 
 interface ComposerProps {
+  /** Hard-disable the input (e.g. history still loading). */
   disabled?: boolean
+  /** A reply is streaming: block sending, but keep the field typeable. */
+  sending?: boolean
   onSend: (text: string) => void
 }
 
-export default function Composer({ disabled, onSend }: ComposerProps) {
+export default function Composer({ disabled, sending, onSend }: ComposerProps) {
   const [value, setValue] = useState('')
   const taRef = useRef<HTMLTextAreaElement>(null)
 
@@ -20,11 +23,21 @@ export default function Composer({ disabled, onSend }: ComposerProps) {
 
   function submit() {
     const text = value.trim()
-    if (!text || disabled) return
+    if (!text || disabled || sending) return
     onSend(text)
     setValue('')
-    requestAnimationFrame(resize)
+    requestAnimationFrame(() => {
+      resize()
+      // Keep the caret in the box so the conversation can continue.
+      taRef.current?.focus()
+    })
   }
+
+  // When a reply finishes streaming (or history finishes loading), return
+  // focus to the textarea so the user can keep typing without clicking.
+  useEffect(() => {
+    if (!disabled && !sending) taRef.current?.focus()
+  }, [disabled, sending])
 
   return (
     <form
@@ -55,7 +68,7 @@ export default function Composer({ disabled, onSend }: ComposerProps) {
       <RippleButton
         type="submit"
         size="icon"
-        disabled={disabled || value.trim() === ''}
+        disabled={disabled || sending || value.trim() === ''}
         aria-label="Send message"
       >
         <SendHorizontalIcon />

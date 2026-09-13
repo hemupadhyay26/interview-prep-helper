@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     port: int = 8000
     openai_api_key: str
     llm_model_name: str = "gpt-5.2"
+    # Smaller / cheaper model for lightweight side tasks (chat titles).
+    # Unset -> falls back to llm_model_name (see app/agents/models.py).
+    title_model_name: str | None = None
     embedding_model_name: str = "text-embedding-3-small"
     database_url: str = "sqlite+aiosqlite:///./data/prephelper.db"
     chroma_persist_dir: str = "./data/chroma"

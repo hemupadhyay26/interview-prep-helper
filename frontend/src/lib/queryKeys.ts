@@ -5,5 +5,6 @@
 export const queryKeys = {
   sessions: ['sessions'] as const,
   session: (id: string) => ['sessions', id] as const,
+  job: (id: string) => ['sessions', id, 'job'] as const,
   resume: ['resume'] as const,
 }

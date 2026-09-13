@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import { PanelLeftIcon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { RippleButton } from '@/components/animate-ui/components/buttons/ripple'
 import { IconButton } from '@/components/animate-ui/components/buttons/icon'
@@ -148,87 +149,119 @@ export default function Sidebar({
       return next
     })
 
-  if (collapsed) {
-    return (
-      <aside className="border-fade-y flex w-14 shrink-0 flex-col items-center gap-1 bg-sidebar py-3 text-sidebar-foreground">
-        <IconButton
-          size="sm"
-          variant="ghost"
-          aria-label="Expand sidebar"
-          onClick={toggleCollapsed}
-        >
-          <PanelLeftIcon />
-        </IconButton>
-        <IconButton
-          size="sm"
-          variant="ghost"
-          aria-label="New chat"
-          onClick={onNew}
-        >
-          <PlusIcon />
-        </IconButton>
-        <div className="flex-1" />
-        <ThemeTogglerButton variant="ghost" size="sm" />
-      </aside>
-    )
-  }
-
   return (
-    <aside className="border-fade-y flex w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground">
-      <div className="flex items-center justify-between px-4 py-3">
-        <span className="font-semibold tracking-tight">Prep Helper</span>
-        <div className="flex items-center gap-0.5">
-          <ThemeTogglerButton variant="ghost" size="sm" />
-          <IconButton
-            size="sm"
-            variant="ghost"
-            aria-label="Collapse sidebar"
-            onClick={toggleCollapsed}
+    <motion.aside
+      className="border-fade-y relative shrink-0 overflow-hidden bg-sidebar text-sidebar-foreground"
+      initial={false}
+      animate={{ width: collapsed ? '3.5rem' : '16rem' }}
+      transition={{ duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
+    >
+      <AnimatePresence initial={false} mode="wait">
+        {collapsed ? (
+          <motion.div
+            key="collapsed"
+            className="flex h-full w-14 flex-col items-center gap-1 py-3"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.12 }}
           >
-            <PanelLeftIcon />
-          </IconButton>
-        </div>
-      </div>
+            <IconButton
+              size="sm"
+              variant="ghost"
+              aria-label="Expand sidebar"
+              onClick={toggleCollapsed}
+            >
+              <PanelLeftIcon />
+            </IconButton>
+            <IconButton
+              size="sm"
+              variant="ghost"
+              aria-label="New chat"
+              onClick={onNew}
+            >
+              <PlusIcon />
+            </IconButton>
+            <div className="flex-1" />
+            <ThemeTogglerButton variant="ghost" size="sm" />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="expanded"
+            className="flex h-full w-64 flex-col"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.12 }}
+          >
+            <div className="flex items-center justify-between px-4 py-3">
+              <span className="font-semibold tracking-tight">Prep Helper</span>
+              <div className="flex items-center gap-0.5">
+                <ThemeTogglerButton variant="ghost" size="sm" />
+                <IconButton
+                  size="sm"
+                  variant="ghost"
+                  aria-label="Collapse sidebar"
+                  onClick={toggleCollapsed}
+                >
+                  <PanelLeftIcon />
+                </IconButton>
+              </div>
+            </div>
 
-      <div className="px-3 pb-2">
-        <RippleButton
-          variant="default"
-          size="sm"
-          className="w-full"
-          onClick={onNew}
-        >
-          <PlusIcon />
-          New chat
-        </RippleButton>
-      </div>
+            <div className="px-3 pb-2">
+              <RippleButton
+                variant="default"
+                size="sm"
+                className="w-full"
+                onClick={onNew}
+              >
+                <PlusIcon />
+                New chat
+              </RippleButton>
+            </div>
 
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-2">
-        {isLoading && sessions.length === 0 && (
-          <p className="px-2 py-3 text-sm text-muted-foreground">Loading…</p>
+            <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-2">
+              {isLoading && sessions.length === 0 && (
+                <div className="space-y-1.5 px-2 py-2">
+                  {[0, 1, 2, 3, 4].map((i) => (
+                    <div
+                      key={i}
+                      className="h-7 animate-pulse rounded-md bg-sidebar-foreground/10"
+                      style={{
+                        animationDelay: `${i * 100}ms`,
+                        width: `${90 - i * 8}%`,
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+              {!isLoading && sessions.length === 0 && (
+                <p className="px-2 py-3 text-sm text-muted-foreground">
+                  No conversations yet
+                </p>
+              )}
+              {sessions.map((s) => (
+                <SessionRow
+                  key={s.session_id}
+                  session={s}
+                  active={s.session_id === activeId}
+                  onSelect={onSelect}
+                  onRename={onRename}
+                  onRequestDelete={setPendingDelete}
+                />
+              ))}
+            </nav>
+
+            <div className="border-t border-sidebar-border px-3 py-3">
+              <p className="mb-1.5 px-0.5 text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/60">
+                Resume
+              </p>
+              <ResumePanel />
+            </div>
+          </motion.div>
         )}
-        {!isLoading && sessions.length === 0 && (
-          <p className="px-2 py-3 text-sm text-muted-foreground">
-            No conversations yet
-          </p>
-        )}
-        {sessions.map((s) => (
-          <SessionRow
-            key={s.session_id}
-            session={s}
-            active={s.session_id === activeId}
-            onSelect={onSelect}
-            onRename={onRename}
-            onRequestDelete={setPendingDelete}
-          />
-        ))}
-      </nav>
-
-      <div className="border-t border-sidebar-border px-3 py-3">
-        <p className="mb-1.5 px-0.5 text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/60">
-          Resume
-        </p>
-        <ResumePanel />
-      </div>
+      </AnimatePresence>
 
       <Dialog
         open={pendingDelete !== null}
@@ -265,6 +298,6 @@ export default function Sidebar({
           </DialogFooter>
         </DialogPopup>
       </Dialog>
-    </aside>
+    </motion.aside>
   )
 }
