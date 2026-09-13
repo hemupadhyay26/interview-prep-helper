@@ -51,11 +51,11 @@ class Resume(Base):
     # re-uploading replaces it. Every chat session references it.
     filename: Mapped[str] = mapped_column(String(255))
 
-    # Docling's markdown export of the parsed file, kept for reference
+    # Plain text extracted from the PDF (PyPDFLoader), kept for reference
     # and re-processing without asking the user to re-upload.
     raw_text: Mapped[str] = mapped_column(Text)
 
-    # JSON-serialized ResumeProfile (see app/agents/resume_agent.py).
+    # JSON-serialized ResumeProfile (see app/schemas/resume.py).
     profile: Mapped[str] = mapped_column(Text)
 
     created_at: Mapped[datetime] = mapped_column(

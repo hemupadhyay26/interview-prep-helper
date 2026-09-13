@@ -1,9 +1,7 @@
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIResponsesModel
-from pydantic_ai.providers.openai import OpenAIProvider
 
-from app.core.config import settings
+from app.agents.models import title_model
 
 
 class ChatTitle(BaseModel):
@@ -24,12 +22,7 @@ class ChatTitle(BaseModel):
 
 
 title_agent = Agent(
-    OpenAIResponsesModel(
-        settings.llm_model_name,
-        provider=OpenAIProvider(
-            api_key=settings.openai_api_key,
-        ),
-    ),
+    title_model,
     name="chat_title_generator",
     output_type=ChatTitle,
     system_prompt="""

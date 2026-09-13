@@ -1,66 +1,43 @@
 import asyncio
 import logging
 
-import chromadb
-from openai import AsyncOpenAI
+from langchain_chroma import Chroma
+from langchain_core.documents import Document
+from langchain_openai import OpenAIEmbeddings
 
-from app.agents.resume_agent import ResumeProfile
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
-
-_client = chromadb.PersistentClient(path=settings.chroma_persist_dir)
-_collection = _client.get_or_create_collection(name="resumes")
 
 # The resume is global (one per app), so every chunk is tagged with this
 # fixed scope - used to clear the previous resume's chunks on re-upload.
 _RESUME_SCOPE = "global"
 
-_openai = AsyncOpenAI(api_key=settings.openai_api_key)
+_embeddings = OpenAIEmbeddings(
+    model=settings.embedding_model_name,
+    api_key=settings.openai_api_key,
+)
+
+# Same on-disk location and collection name as before; LangChain's Chroma
+# wrapper opens it with a chromadb.PersistentClient under the hood.
+_store = Chroma(
+    collection_name="resumes",
+    embedding_function=_embeddings,
+    persist_directory=settings.chroma_persist_dir,
+)
 
 
-async def embed_texts(texts: list[str]) -> list[list[float]]:
-    if not texts:
-        return []
-
-    response = await _openai.embeddings.create(
-        model=settings.embedding_model_name,
-        input=texts,
-    )
-
-    return [item.embedding for item in response.data]
+def _clean_metadata(metadata: dict) -> dict:
+    """Chroma only accepts str/int/float/bool metadata values - PyPDFLoader
+    can emit None / other types for PDF header fields, so drop those."""
+    return {
+        key: value
+        for key, value in metadata.items()
+        if isinstance(value, (str, int, float, bool))
+    }
 
 
-def build_chunks(
-    sections: list[dict],
-    profile: ResumeProfile,
-) -> list[tuple[str, dict]]:
-    """
-    Build (text, metadata) chunks for embedding: one per detected resume
-    section (experience/skills/projects/education/...), plus one per
-    individually-extracted project - so `search_resume` can return a
-    single project's detail rather than the whole projects block.
-    """
-    chunks: list[tuple[str, dict]] = []
-
-    for section in sections:
-        text = f"{section['title']}\n\n{section['text']}"
-        chunks.append((text, {"section": section["key"]}))
-
-    for project in profile.projects:
-        text = (
-            f"Project: {project.name}\n"
-            f"{project.description}\n"
-            f"Technologies: {', '.join(project.technologies)}"
-        )
-        chunks.append(
-            (text, {"section": "project", "project_name": project.name})
-        )
-
-    return chunks
-
-
-async def upsert_resume_chunks(chunks: list[tuple[str, dict]]) -> None:
+async def upsert_resume_chunks(chunks: list[Document]) -> None:
     """Replace all stored resume chunks with `chunks`."""
 
     await delete_resume_chunks()
@@ -68,19 +45,15 @@ async def upsert_resume_chunks(chunks: list[tuple[str, dict]]) -> None:
     if not chunks:
         return
 
-    texts = [text for text, _ in chunks]
-    metadatas = [{"scope": _RESUME_SCOPE, **meta} for _, meta in chunks]
+    for chunk in chunks:
+        chunk.metadata = {
+            **_clean_metadata(chunk.metadata),
+            "scope": _RESUME_SCOPE,
+        }
+
     ids = [f"{_RESUME_SCOPE}:{i}" for i in range(len(chunks))]
 
-    embeddings = await embed_texts(texts)
-
-    await asyncio.to_thread(
-        _collection.add,
-        ids=ids,
-        embeddings=embeddings,
-        documents=texts,
-        metadatas=metadatas,
-    )
+    await asyncio.to_thread(_store.add_documents, chunks, ids=ids)
 
     logger.info("Stored %d resume chunks", len(chunks))
 
@@ -89,21 +62,29 @@ async def search_resume_chunks(query: str, k: int = 4) -> list[str]:
     """Return up to `k` resume chunk texts most relevant to `query`.
     Empty list if no resume has been uploaded."""
 
-    [query_embedding] = await embed_texts([query])
-
-    result = await asyncio.to_thread(
-        _collection.query,
-        query_embeddings=[query_embedding],
-        n_results=k,
-        where={"scope": _RESUME_SCOPE},
+    results = await asyncio.to_thread(
+        _store.similarity_search,
+        query,
+        k=k,
+        filter={"scope": _RESUME_SCOPE},
     )
 
-    documents = result.get("documents") or [[]]
-    return documents[0]
+    return [doc.page_content for doc in results]
 
 
 async def delete_resume_chunks() -> None:
-    await asyncio.to_thread(
-        _collection.delete,
-        where={"scope": _RESUME_SCOPE},
-    )
+    """Remove every chunk from the `resumes` collection.
+
+    The resume is global (one per app), so the collection only ever holds
+    the current resume - clearing it wholesale (rather than filtering on
+    `scope`) guarantees no stale or older-format chunks survive a delete
+    or a re-upload and leak into a later `search_resume`.
+    """
+
+    def _clear() -> None:
+        existing = _store._collection.get(include=[])
+        ids = existing.get("ids") or []
+        if ids:
+            _store._collection.delete(ids=ids)
+
+    await asyncio.to_thread(_clear)

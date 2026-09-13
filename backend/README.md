@@ -53,17 +53,29 @@ show up as a drop + add).
 The resume is **global** — one per app, not tied to a chat session.
 Upload it once; every session's `interview_agent` references it.
 
-`POST /resume` (multipart, field `file`, PDF or DOCX, ≤5MB) parses the
-resume with [Docling](https://docling-project.github.io/docling/), splits
-it into sections by detected heading (experience/skills/projects/
-education), runs it through `resume_agent` for structured extraction, and
-embeds section + per-project chunks into a local Chroma store at
-`data/chroma/` (via `EMBEDDING_MODEL_NAME` in `.env`, default
-`text-embedding-3-small`). `interview_agent` then uses it via a
-`search_resume` tool plus a resume summary injected into every turn.
-`GET`/`DELETE /resume` fetch/remove it. Re-uploading replaces the
-previous one.
+`POST /resume` (multipart, field `file`, **PDF only**, ≤5MB) loads the
+resume with LangChain's
+[`PyPDFLoader`](https://python.langchain.com/docs/integrations/document_loaders/pypdfloader/),
+runs the extracted text through `resume_agent` into a full structured
+`ResumeProfile` (`app/schemas/resume.py`) — name, headline, contact,
+summary, skills, per-role experience with bullet highlights, projects,
+education, certifications, awards, languages — then splits the pages with
+`RecursiveCharacterTextSplitter` and embeds the chunks into a local Chroma
+store at `data/chroma/` via `langchain-chroma` + `OpenAIEmbeddings`
+(`EMBEDDING_MODEL_NAME` in `.env`, default `text-embedding-3-small`).
 
-Note: `docling` is a heavy dependency (pulls in `torch` + layout/table ML
-models) — the first real parse after startup may be slower while those
-models load, but a 1-2 page resume converts quickly after that.
+Link handling: `resume_parser.extract_hyperlinks` reads the PDF's `/Annots`
+link targets so a link shown as "linkedin.com" is stored as the real
+`linkedin.com/in/<handle>` URL; `_merge_links` reconciles those with the
+model's text guesses and forces an `https://` scheme.
+
+`interview_agent` gets the whole snapshot (name, links, experience,
+education, certs) injected every turn and can call the `search_resume`
+tool for the full bullet-level detail. `GET`/`DELETE /resume` fetch/remove
+it. Re-uploading replaces the previous one. `GET` upgrades older
+flat-schema rows on the fly, but re-upload is needed to fill the new
+fields.
+
+Note: DOCX is no longer supported — `PyPDFLoader` is PDF-only. Scanned
+(image-only) PDFs also won't work without OCR; the upload 422s with a
+"could not extract any text" message in that case.

@@ -30,11 +30,60 @@ export interface ChatMessage {
   content: string
 }
 
+/**
+ * The job posting attached to a session (`GET/POST /sessions/{id}/job`,
+ * `JobOut`). One per session; the interview agent grounds its questions
+ * in it.
+ */
+export interface Job {
+  session_id: string
+  source_url: string
+  summary: string
+  title: string
+  company: string
+  location: string
+  employment_type: string
+  seniority: string
+  responsibilities: string[]
+  required_skills: string[]
+  preferred_skills: string[]
+  tech_stack: string[]
+}
+
 /** One project extracted from an uploaded resume. */
 export interface ResumeProject {
   name: string
   description: string
   technologies: string[]
+  link: string
+}
+
+/** One role in the candidate's work history. */
+export interface ResumeExperience {
+  company: string
+  title: string
+  location: string
+  start_date: string
+  end_date: string
+  highlights: string[]
+}
+
+/** One degree / school. */
+export interface ResumeEducation {
+  institution: string
+  degree: string
+  location: string
+  start_date: string
+  end_date: string
+  details: string[]
+}
+
+/** Contact block from the resume header. */
+export interface ResumeContact {
+  email: string
+  phone: string
+  location: string
+  links: string[]
 }
 
 /**
@@ -43,9 +92,15 @@ export interface ResumeProject {
  */
 export interface Resume {
   filename: string
+  name: string
+  headline: string
+  contact: ResumeContact
   summary: string
   skills: string[]
+  experience: ResumeExperience[]
   projects: ResumeProject[]
-  experience: string[]
-  education: string[]
+  education: ResumeEducation[]
+  certifications: string[]
+  awards: string[]
+  languages: string[]
 }

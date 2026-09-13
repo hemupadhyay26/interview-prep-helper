@@ -5,6 +5,7 @@ import { useSessions } from './hooks/useSessions'
 import { useSessionMessages } from './hooks/useSessionMessages'
 import { useSessionMutations } from './hooks/useSessionMutations'
 import { useChatStream } from './hooks/useChatStream'
+import { useAddJob, useJob } from './hooks/useJob'
 
 export default function App() {
   // `null` means "no explicit choice yet" — fall back to the newest session.
@@ -17,6 +18,8 @@ export default function App() {
 
   const messagesQuery = useSessionMessages(activeId)
   const { create, rename, remove } = useSessionMutations()
+  const addJob = useAddJob()
+  const jobQuery = useJob(activeId)
   const {
     overlay,
     isStreaming,
@@ -24,6 +27,9 @@ export default function App() {
     send: sendChat,
     reset: resetChat,
   } = useChatStream()
+
+  const messages = [...(messagesQuery.data ?? []), ...overlay]
+  const activeTitle = sessions.find((s) => s.session_id === activeId)?.title
 
   // Drop any in-flight stream state when switching conversations.
   useEffect(() => {
@@ -65,8 +71,20 @@ export default function App() {
     [activeId, create, sendChat],
   )
 
-  const messages = [...(messagesQuery.data ?? []), ...overlay]
-  const activeTitle = sessions.find((s) => s.session_id === activeId)?.title
+  const handleAddJobLink = useCallback(
+    async (url: string) => {
+      // Attach the job to the conversation the user is already in. Only
+      // spin up a session when there genuinely isn't one yet.
+      let sessionId = activeId
+      if (!sessionId) {
+        const created = await create.mutateAsync()
+        sessionId = created.session_id
+        setSelectedId(created.session_id)
+      }
+      await addJob.mutateAsync({ sessionId, url })
+    },
+    [activeId, create, addJob],
+  )
 
   return (
     <div className="flex h-full">
@@ -85,6 +103,8 @@ export default function App() {
         error={chatError}
         isLoading={Boolean(activeId) && messagesQuery.isLoading}
         onSend={handleSend}
+        onAddJobLink={handleAddJobLink}
+        job={jobQuery.data ?? null}
         sessionId={activeId}
         sessionTitle={activeTitle}
       />

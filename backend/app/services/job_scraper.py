@@ -18,6 +18,22 @@ class JobScrapeError(Exception):
     """Raised when a job posting URL could not be turned into usable text."""
 
 
+class BrowserSetupError(JobScrapeError):
+    """The headless browser itself failed to launch (missing system libs,
+    browser not installed) - a server setup problem, not a bad URL."""
+
+
+# Substrings that mean "the browser can't run here", not "this page is bad".
+_BROWSER_SETUP_MARKERS = (
+    "shared libraries",
+    "install-deps",
+    "playwright install",
+    "executable doesn't exist",
+    "browserType.launch",
+    "Host system is missing dependencies",
+)
+
+
 async def scrape_job_posting(url: str) -> str:
     """
     Fetch `url` with a headless browser (Crawl4AI) and return the page as
@@ -47,17 +63,32 @@ async def scrape_job_posting(url: str) -> str:
         cache_mode=CacheMode.BYPASS,
     )
 
+    def _is_browser_setup(message: str) -> bool:
+        lowered = message.lower()
+        return any(m.lower() in lowered for m in _BROWSER_SETUP_MARKERS)
+
     try:
         async with AsyncWebCrawler(config=browser_config) as crawler:
             result = await crawler.arun(url=url, config=run_config)
     except Exception as exc:
         logger.exception("Crawl4AI failed to fetch job posting: %s", url)
+        if _is_browser_setup(str(exc)):
+            raise BrowserSetupError(
+                "The scraping browser isn't set up on the server "
+                "(run `crawl4ai-setup`). Paste the job description text "
+                "instead."
+            ) from exc
         raise JobScrapeError(f"Could not load '{url}': {exc}") from exc
 
     if not result.success:
-        raise JobScrapeError(
-            f"Could not load '{url}': {result.error_message or 'unknown error'}"
-        )
+        message = result.error_message or "unknown error"
+        if _is_browser_setup(message):
+            raise BrowserSetupError(
+                "The scraping browser isn't set up on the server "
+                "(run `crawl4ai-setup`). Paste the job description text "
+                "instead."
+            )
+        raise JobScrapeError(f"Could not load '{url}': {message}")
 
     markdown = (getattr(result, "markdown", None) or "").strip()
 

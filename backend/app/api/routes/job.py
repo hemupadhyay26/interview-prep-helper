@@ -4,13 +4,21 @@ import logging
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 
+from app.agents.job_agent import JobIngestError, ingest_job_posting
 from app.db.database import SessionLocal
-from app.db.models import JobPosting
-from app.schemas.job import JobOut
+from app.db.models import ChatSession, JobPosting
+from app.schemas.job import JobIn, JobOut
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sessions", tags=["job"])
+
+_DEFAULT_TITLES = {"", "New Chat"}
+
+
+def _job_title(details) -> str:
+    label = " · ".join(p for p in (details.title, details.company) if p)
+    return (label or "Job posting")[:255]
 
 
 def _to_job_out(session_id: str, source_url: str, details_json: str) -> JobOut:
@@ -30,6 +38,48 @@ def _to_job_out(session_id: str, source_url: str, details_json: str) -> JobOut:
         preferred_skills=details.get("preferred_skills", []),
         tech_stack=details.get("tech_stack", []),
     )
+
+
+# -------------------------------------------------------------------
+# Add / replace job posting from a URL
+# -------------------------------------------------------------------
+
+@router.post("/{session_id}/job")
+async def add_job(session_id: str, payload: JobIn):
+    url = str(payload.url)
+
+    async with SessionLocal() as db:
+        session = (
+            await db.execute(
+                select(ChatSession).where(ChatSession.id == session_id)
+            )
+        ).scalar_one_or_none()
+
+        if session is None:
+            raise HTTPException(status_code=404, detail="Chat session not found")
+
+    # Scrape + structure + persist the JobPosting row for this session.
+    try:
+        details = await ingest_job_posting(session_id, url)
+    except JobIngestError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # Name the session after the role if the user hasn't titled it yet, so
+    # the sidebar reflects which job this conversation is about.
+    async with SessionLocal() as db:
+        session = (
+            await db.execute(
+                select(ChatSession).where(ChatSession.id == session_id)
+            )
+        ).scalar_one_or_none()
+
+        if session is not None and session.title in _DEFAULT_TITLES:
+            session.title = _job_title(details)
+            await db.commit()
+
+    logger.info("Job posting added | session=%s | url=%s", session_id, url)
+
+    return _to_job_out(session_id, url, details.model_dump_json())
 
 
 # -------------------------------------------------------------------
